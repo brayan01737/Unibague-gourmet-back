@@ -5,6 +5,7 @@ import dock.gourmet.model.*;
 import dock.gourmet.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -13,39 +14,46 @@ import java.util.List;
 public class PedidoService {
 
     private final PedidoRepository pedidoRepository;
+    private final ItemPedidoRepository itemPedidoRepository;
     private final ProductoRepository productoRepository;
     private final UsuarioRepository usuarioRepository;
 
+    @Transactional
     public PedidoResponse crear(String emailCliente, CrearPedidoRequest request) {
         Usuario cliente = usuarioRepository.findByEmail(emailCliente)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
+        // 1. Calcular total antes de guardar
+        double total = request.getItems().stream().mapToDouble(itemReq -> {
+            Producto producto = productoRepository.findById(itemReq.getProductoId())
+                    .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
+            return producto.getPrecio() * itemReq.getCantidad();
+        }).sum();
+
+        // 2. Guardar pedido con total correcto
         Pedido pedido = Pedido.builder()
                 .cliente(cliente)
-                .total(0.0)
+                .total(total)
                 .build();
-
         pedido = pedidoRepository.save(pedido);
 
-        final Pedido pedidoFinal = pedido;
+        // 3. Guardar cada item vinculado al pedido
+        final Pedido pedidoGuardado = pedido;
         List<ItemPedido> items = request.getItems().stream().map(itemReq -> {
             Producto producto = productoRepository.findById(itemReq.getProductoId())
                     .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
             return ItemPedido.builder()
-                    .pedido(pedidoFinal)
+                    .pedido(pedidoGuardado)
                     .producto(producto)
                     .cantidad(itemReq.getCantidad())
                     .precioUnitario(producto.getPrecio())
                     .build();
         }).toList();
 
-        double total = items.stream()
-                .mapToDouble(i -> i.getPrecioUnitario() * i.getCantidad())
-                .sum();
+        itemPedidoRepository.saveAll(items);
 
-        pedido.setItems(items);
-        pedido.setTotal(total);
-        return toResponse(pedidoRepository.save(pedido));
+        // 4. Recargar pedido con items persistidos
+        return toResponse(pedidoRepository.findById(pedidoGuardado.getId()).orElseThrow());
     }
 
     public List<PedidoResponse> listarTodos() {
@@ -65,6 +73,7 @@ public class PedidoService {
                 .stream().map(this::toResponse).toList();
     }
 
+    @Transactional
     public PedidoResponse cambiarEstado(Long id, String nuevoEstado) {
         Pedido pedido = pedidoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Pedido no encontrado"));
@@ -74,11 +83,19 @@ public class PedidoService {
 
     private PedidoResponse toResponse(Pedido p) {
         List<ItemResponse> items = p.getItems().stream().map(i ->
-                new ItemResponse(i.getId(), i.getProducto().getNombre(),
+                new ItemResponse(
+                        i.getId(),
+                        i.getProducto().getNombre(),
                         i.getProducto().getImagenUrl(),
-                        i.getCantidad(), i.getPrecioUnitario())
+                        i.getCantidad(),
+                        i.getPrecioUnitario())
         ).toList();
-        return new PedidoResponse(p.getId(), p.getCliente().getNombre(),
-                items, p.getTotal(), p.getEstado().name(), p.getFechaCreacion());
+        return new PedidoResponse(
+                p.getId(),
+                p.getCliente().getNombre(),
+                items,
+                p.getTotal(),
+                p.getEstado().name(),
+                p.getFechaCreacion());
     }
 }
