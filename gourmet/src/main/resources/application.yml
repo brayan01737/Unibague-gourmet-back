@@ -4,8 +4,8 @@ spring:
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:gourmet_db}
-    username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:postgres}
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:Js25112005-}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -17,8 +17,22 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+
 server:
   port: ${SERVER_PORT:8080}
+
+app:
+  storage:
+    location: ${STORAGE_PATH:${user.home}/gourmet-storage}
+    base-url: ${BASE_URL:http://localhost:8080}
+
+jwt:
+  secret: ${JWT_SECRET:gourmet-secret-key-super-segura-2024-pos-system}
+  expiration: 86400000
 
 logging:
   level:
